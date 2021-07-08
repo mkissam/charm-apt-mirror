@@ -108,6 +108,38 @@ juju config apt-mirror security-pocket-name=<some-custom-regex-string>
 The upgrade snapshot action is using this value to decide which dists directories will be cloned from the recent mirror, and which ones will come from the base snapshot.
 
 
+### Multi site support
+
+It is possible to assign snapshots to multiple sites and those symlinks will be available under the published directory.
+
+Enable the multi site feature:
+```
+juju config apt-mirror enable-multisite-publish=true
+```
+
+Publish snapshots under site names:
+```
+juju run-action --wait apt-mirror/0 publish-snapshot name=snapshot-20210708084914-security site-name=site01.example.com
+juju run-action --wait apt-mirror/0 publish-snapshot name=snapshot-20210708084914-security site-name=site02.example.com
+juju run-action --wait apt-mirror/0 publish-snapshot name=snapshot-20210708084914 site-name=site03.example.com
+```
+
+Enlist site snapshot assignments:
+```
+juju run-action --wait apt-mirror/0 list-published-snapshots
+unit-apt-mirror-0:
+  UnitId: apt-mirror/0
+  id: "55"
+  results:
+    published-snapshots: '[''site01.example.com [snapshot-20210708085248-security]'',
+      ''site03.example.com [snapshot-20210708084914]'', ''site02.example.com [snapshot-20210708085248-security]'']'
+  status: completed
+  timing:
+    completed: 2021-07-08 10:47:02 +0000 UTC
+    enqueued: 2021-07-08 10:46:56 +0000 UTC
+    started: 2021-07-08 10:47:01 +0000 UTC
+```
+
 ## Developing
 
 Create and activate a virtualenv,

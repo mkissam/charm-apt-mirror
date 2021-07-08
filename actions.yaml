@@ -21,6 +21,12 @@ publish-snapshot:
       description: "Name of the snapshot to publish."
       type: string
       default: ""
+    site-name:
+      description: "Site name used for snapshot publish."
+      type: string
+      default: ""
+list-published-snapshots:
+  description: List published snapshots and their revisions.
 upgrade-snapshot:
   description: Security upgrade of a snapshot.
   params:

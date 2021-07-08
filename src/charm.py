@@ -32,6 +32,7 @@ class AptMirrorCharm(CharmBase):
         self.framework.observe(self.on.synchronize_action, self._on_synchronize_action)
         self.framework.observe(self.on.create_snapshot_action, self._on_create_snapshot_action)
         self.framework.observe(self.on.publish_snapshot_action, self._on_publish_snapshot_action)
+        self.framework.observe(self.on.list_published_snapshots_action, self._on_list_published_snapshots_action)
         self.framework.observe(self.on.list_snapshots_action, self._on_list_snapshots_action)
         self.framework.observe(self.on.delete_snapshot_action, self._on_delete_snapshot_action)
         self.framework.observe(self.on.upgrade_snapshot_action, self._on_upgrade_snapshot_action)
@@ -81,6 +82,7 @@ class AptMirrorCharm(CharmBase):
             self._stored.config['use_proxy'] = False
         self._stored.config['mirror-list'] = self.model.config['mirror-list'].splitlines()
         self._stored.config['security-pocket-name'] = self.model.config['security-pocket-name']
+        self._stored.config['enable-multisite-publish'] = self.model.config['enable-multisite-publish']
         self._render_config(self._stored.config)
         if 'cron-schedule' in self._stored.config and \
            self._stored.config['cron-schedule'] != 'None':
@@ -119,6 +121,24 @@ class AptMirrorCharm(CharmBase):
         logger.info("Delete snapshot {}".format(snapshot))
         shutil.rmtree("{}/{}".format(self._stored.config['base-path'], snapshot))
 
+    def _on_list_published_snapshots_action(self, event):
+        snapshots = []
+        if not self._stored.config['enable-multisite-publish']:
+            publish_path = "{}/publish".format(self._stored.config['base-path'])
+            if os.path.islink(publish_path):
+                bn = os.path.basename(os.readlink(publish_path))
+                snapshots.append("{} [{}]".format("default", bn))
+        else:
+            publish_path = "{}/publish".format(self._stored.config['base-path'])
+            if os.path.exists(publish_path):
+                for f in os.listdir(publish_path):
+                    symlink_path = "{}/{}".format(publish_path, f)
+                    if os.path.islink(symlink_path):
+                        bn = os.path.basename(os.readlink(symlink_path))
+                        snapshots.append("{} [{}]".format(f, bn))
+        logger.info("List published snapshots {}".format(snapshots))
+        event.set_results({"published-snapshots": snapshots})
+
     def _on_list_snapshots_action(self, event):
         snapshots = []
         for directory in next(os.walk(self._stored.config['base-path']))[1]:
@@ -129,6 +149,7 @@ class AptMirrorCharm(CharmBase):
 
     def _on_publish_snapshot_action(self, event):
         name = event.params["name"]
+        site_name = event.params["site-name"]
         logger.info("Publish snapshot {}".format(name))
         snapshot_path = "{}/{}".format(self._stored.config['base-path'], name)
         publish_path = "{}/publish".format(self._stored.config['base-path'])
@@ -137,7 +158,16 @@ class AptMirrorCharm(CharmBase):
             return
         if os.path.islink(publish_path):
             os.unlink(publish_path)
-        os.symlink(snapshot_path, publish_path)
+        if self._stored.config['enable-multisite-publish']:
+            site_publish_path = "{}/{}".format(publish_path, site_name)
+            if not os.path.exists(publish_path):
+                os.mkdir(publish_path)
+            if os.path.islink(site_publish_path):
+                os.unlink(site_publish_path)
+            os.symlink(snapshot_path, site_publish_path)
+        else:
+            # simply simlink the snapshot_path when multisite disabled
+            os.symlink(snapshot_path, publish_path)
         event.set_results({name: publish_path})
 
     def _on_upgrade_snapshot_action(self, event):
@@ -199,9 +229,25 @@ class AptMirrorCharm(CharmBase):
                 for mirror in self._stored.config['mirror-list']]
 
     def _get_published_snapshot(self):
-        publish_path = "{}/publish".format(self._stored.config['base-path'])
-        if os.path.islink(publish_path):
-            return os.path.basename(os.readlink(publish_path))
+        if not self._stored.config['enable-multisite-publish']:
+            publish_path = "{}/publish".format(self._stored.config['base-path'])
+            if os.path.islink(publish_path):
+                return os.path.basename(os.readlink(publish_path))
+        else:
+            publish_path = "{}/publish".format(self._stored.config['base-path'])
+            sites = []
+            if os.path.exists(publish_path):
+                for f in os.listdir(publish_path):
+                    symlink_path = "{}/{}".format(publish_path, f)
+                    if os.path.islink(symlink_path):
+                        bn = os.path.basename(os.readlink(symlink_path))
+                        sites.append("{} [{}]".format(f, bn))
+            if len(sites) > 0:
+                if len(sites) == 1:
+                    return sites[0]
+                else:
+                    return "multiple sites"
+
 
     def _build_subtree(self, mirrors, root, path):
         # path relative to root directory

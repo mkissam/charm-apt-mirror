@@ -27,6 +27,10 @@ options:
     default: True
     description: Use model juju-http(s)-proxy settings if provided.
     type: boolean
+  enable-multisite-publish:
+    default: False
+    description: Enables to use the site-name field in publish snapshot action.
+    type: boolean
   security-pocket-name:
     default: /security.ubuntu.com/
     description: Security upgrade action is using this regex to filter package dist sources.
