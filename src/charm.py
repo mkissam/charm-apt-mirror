@@ -34,6 +34,7 @@ class AptMirrorCharm(CharmBase):
         self.framework.observe(self.on.publish_snapshot_action, self._on_publish_snapshot_action)
         self.framework.observe(self.on.list_snapshots_action, self._on_list_snapshots_action)
         self.framework.observe(self.on.delete_snapshot_action, self._on_delete_snapshot_action)
+        self.framework.observe(self.on.upgrade_snapshot_action, self._on_upgrade_snapshot_action)
         self.framework.observe(self.on.publish_relation_joined,
                                self._on_publish_relation_joined)
 
@@ -79,6 +80,7 @@ class AptMirrorCharm(CharmBase):
         else:
             self._stored.config['use_proxy'] = False
         self._stored.config['mirror-list'] = self.model.config['mirror-list'].splitlines()
+        self._stored.config['security-pocket-name'] = self.model.config['security-pocket-name']
         self._render_config(self._stored.config)
         if 'cron-schedule' in self._stored.config and \
            self._stored.config['cron-schedule'] != 'None':
@@ -108,23 +110,9 @@ class AptMirrorCharm(CharmBase):
             os.makedirs(snapshot_name_path)
         for dirpath, dirs, files in os.walk(mirror_path):
             if 'pool' in dirs:
-                src_root = dirpath
-                src_pool = "{}/pool".format(src_root)
-                subtree = self._build_subtree(mirrors, src_root, mirror_path)
-                dst_root = "{}/{}".format(snapshot_name_path, subtree)
-                dst_pool = "{}/pool".format(dst_root)
-                os.makedirs(dst_root, exist_ok=True)
-                os.symlink(src_pool, dst_pool)
-                logger.info('{} -> {}'.format(src_pool, dst_pool))
+                self._create_pool_symlink(dirpath, mirrors, mirror_path, snapshot_name_path)
             if 'dists' in dirs:
-                src_root = dirpath
-                src_dists = "{}/dists".format(src_root)
-                subtree = self._build_subtree(mirrors, src_root, mirror_path)
-                dst_root = "{}/{}".format(snapshot_name_path, subtree)
-                dst_dists = "{}/dists".format(dst_root)
-                os.makedirs(dst_root, exist_ok=True)
-                shutil.copytree(src_dists, dst_dists)
-                logger.info('{} -> {}'.format(src_dists, dst_dists))
+                self._copy_dists_directory(dirpath, mirrors, mirror_path, snapshot_name_path)
 
     def _on_delete_snapshot_action(self, event):
         snapshot = event.params["name"]
@@ -151,6 +139,42 @@ class AptMirrorCharm(CharmBase):
             os.unlink(publish_path)
         os.symlink(snapshot_path, publish_path)
         event.set_results({name: publish_path})
+
+    def _on_upgrade_snapshot_action(self, event):
+        name = event.params["name"]
+        upgrade_name = self._get_snapshot_name()
+        logger.info("Upgrade snapshot from {}".format(name))
+        snapshot_path = "{}/{}".format(self._stored.config['base-path'], name)
+        upgrade_path = "{}/{}-security".format(self._stored.config['base-path'], upgrade_name)
+        if not os.path.isdir(snapshot_path):
+            event.fail("Snapshot does not exist")
+            return
+        mirror_path = "{}/mirror".format(self._stored.config['base-path'])
+        mirrors = self._mirror_names()
+        if not os.path.exists(upgrade_path):
+            os.makedirs(upgrade_path)
+
+        security_pocket_name = self._stored.config['security-pocket-name']
+        if not security_pocket_name:
+            security_pocket_name = "/security.ubuntu.com/"
+        logger.info("Security pocket name = {}".format(security_pocket_name))
+        # copy from mirror
+        for dirpath, dirs, files in os.walk(mirror_path):
+            if 'pool' in dirs:
+                self._create_pool_symlink(dirpath, mirrors, mirror_path, upgrade_path)
+            if 'dists' in dirs:
+                # copy the dist tree from the mirror if it is matching
+                # security pocket name
+                if re.findall(security_pocket_name, dirpath):
+                    self._copy_dists_directory(dirpath, mirrors, mirror_path, upgrade_path)
+        # copy dist from source snapshot - preserve package versions
+        for dirpath, dirs, files in os.walk(snapshot_path):
+            if 'dists' in dirs:
+                # copy the dist tree from the snaphsot if it is not matching
+                # the security pocket name
+                if not re.findall(security_pocket_name, dirpath):
+                    self._copy_dists_directory(dirpath, mirrors, snapshot_path, upgrade_path)
+        event.set_results({name: upgrade_path})
 
     def _render_config(self, config):
         with open('templates/mirror.list.j2') as f:
@@ -196,6 +220,25 @@ class AptMirrorCharm(CharmBase):
                                           '')
         return subtree
 
+    def _create_pool_symlink(self, dirpath, mirrors, mirror_path, snapshot_name_path):
+        src_root = dirpath
+        src_pool = "{}/pool".format(src_root)
+        subtree = self._build_subtree(mirrors, src_root, mirror_path)
+        dst_root = "{}/{}".format(snapshot_name_path, subtree)
+        dst_pool = "{}/pool".format(dst_root)
+        os.makedirs(dst_root, exist_ok=True)
+        os.symlink(src_pool, dst_pool)
+        logger.info('{} -> {}'.format(src_pool, dst_pool))
+
+    def _copy_dists_directory(self, dirpath, mirrors, mirror_path, snapshot_name_path):
+        src_root = dirpath
+        src_dists = "{}/dists".format(src_root)
+        subtree = self._build_subtree(mirrors, src_root, mirror_path)
+        dst_root = "{}/{}".format(snapshot_name_path, subtree)
+        dst_dists = "{}/dists".format(dst_root)
+        os.makedirs(dst_root, exist_ok=True)
+        shutil.copytree(src_dists, dst_dists)
+        logger.info('{} -> {}'.format(src_dists, dst_dists))
 
 if __name__ == "__main__":
     main(AptMirrorCharm)

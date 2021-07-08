@@ -26,7 +26,7 @@ services:
     to:
     - '0'
   apt-mirror:
-    charm: cs:~majduk/apt-mirror
+    charm: cs:~marton-kiss/apt-mirror
     expose: true
     num_units: 1
     options:
@@ -88,6 +88,25 @@ Currently published snapshot is shown in `juju status`.
 Repository can be synchronized with the upstream multiple times and multiple snapshots can be created. It's possible to expose any arbitrary snapshot, making it possible to fine tune the packages available to the repository cilents.
 
 The repository allows also specifying a Cron job via `cron-schedule` option, to regularily, automatically sync to the upstream to make sure the repository tracks upstream at a certain delay. To expose the latest packages to the clients, snapshot still needs to be created and published.
+
+### Security pocket upgrades
+
+If the apt mirror list contains the security.ubuntu.com archive, it is possible to upgrade a snapshot with the packages from the security package repository only and the keep the main and other packages pinned into their original stable versions.
+
+A snapshot upgrade can be obtained by using the upgrade-snapshot action, where the name is set to the base snapshot name:
+```
+juju run-action --wait upgrade-snapshot name=snapshot-20210329092856
+```
+
+In this case the pool will be symlinked to the recent mirror, the security dists directory will be fetched from the recent mirror as well, meanwhile other package descriptor dist directories will be directly cloned from the base snapshot.
+
+The security pocket name defaults to `/security.ubuntu.com/` and it can be set to any other custom value using:
+```
+juju config apt-mirror security-pocket-name=<some-custom-regex-string>
+```
+
+The upgrade snapshot action is using this value to decide which dists directories will be cloned from the recent mirror, and which ones will come from the base snapshot.
+
 
 ## Developing
 

@@ -21,3 +21,10 @@ publish-snapshot:
       description: "Name of the snapshot to publish."
       type: string
       default: ""
+upgrade-snapshot:
+  description: Security upgrade of a snapshot.
+  params:
+    name:
+      description: "Name of the snapshot to publish."
+      type: string
+      default: ""
